@@ -36,7 +36,12 @@ def http(url, data=None, headers=None, method=None, timeout=30):
         hdr.update(headers)
     body = None
     if data is not None:
-        body = urllib.parse.urlencode(data).encode() if isinstance(data, dict) else data.encode()
+        if isinstance(data, dict):
+            body = urllib.parse.urlencode(data).encode()
+        elif isinstance(data, bytes):
+            body = data
+        else:
+            body = data.encode()
     req = urllib.request.Request(url, data=body, headers=hdr, method=method)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
