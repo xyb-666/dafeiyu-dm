@@ -136,6 +136,10 @@ def main():
         print("no new message")
         return
 
+    if not os.environ.get("DS_KEY"):
+        print("DS_KEY missing -> leave messages unread")
+        return
+
     history = []
     for m in msgs:
         if str(m.get("sender_uid")) == me:
