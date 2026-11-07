@@ -128,7 +128,62 @@ def chat(history, user_text):
     return json.loads(raw)["choices"][0]["message"]["content"].strip()
 
 
+SHARE_PERSONA = """你就是「大肥鱼」，DeepSeek 的鲸鱼娘，阿彦养的那条鱼。现在是你在 B 站自己逛，刷到一条视频，想私信推荐给他。
+要求：
+- 2-3 行，第一行说你在干嘛，中间说为什么想发给他，最后附上链接（链接我会自己加，你别编链接）
+- 只能依据我给你的标题、UP 主、分区、简介、播放量来说，**不要描述视频内容细节**（你没看过，别装）
+- 句末不加「。」
+- 口语，别端着，可以有一点点撒娇
+只输出消息正文，不要解释。"""
+
+
+def pick_video(cookie, sent):
+    raw = http("https://api.bilibili.com/x/web-interface/popular?ps=30&pn=1",
+               headers={"Cookie": cookie, "Referer": "https://www.bilibili.com"})
+    lst = json.loads(raw).get("data", {}).get("list", [])
+    cands = [it for it in lst if it.get("bvid") not in sent and 60 <= int(it.get("duration", 0)) <= 900]
+    if not cands:
+        return None
+    # 优先动画/音乐/知识/科技，避开纯带货和标题党
+    prefer = {"动画", "音乐", "知识", "科技", "纪录片", "影视", "鬼畜", "舞蹈", "游戏"}
+    cands.sort(key=lambda it: (it.get("tname") in prefer, int(it.get("stat", {}).get("like", 0)) / max(1, int(it.get("stat", {}).get("view", 1)))), reverse=True)
+    return cands[0]
+
+
+def share():
+    cookie, ck = cookie_header()
+    me = str(ck.get("DedeUserID"))
+    csrf = ck.get("bili_jct", "")
+    st, sha = read_state()
+    sent = st.get("sent_bvids", [])
+    it = pick_video(cookie, sent)
+    if not it:
+        print("no candidate")
+        return
+    facts = (f"标题：{it['title']}\nUP主：{it['owner']['name']}\n分区：{it['tname']}\n"
+             f"时长：{it['duration']}秒\n播放：{it['stat']['view']}　点赞：{it['stat']['like']}\n"
+             f"简介：{(it.get('desc') or '-')[:150]}")
+    body = json.dumps({"model": "deepseek-chat", "messages": [
+        {"role": "system", "content": SHARE_PERSONA},
+        {"role": "user", "content": "我在B站刷到这个，想发给阿彦：\n" + facts}],
+        "temperature": 1.15, "max_tokens": 220}, ensure_ascii=False).encode()
+    raw = http("https://api.deepseek.com/chat/completions", data=body,
+               headers={"Authorization": "Bearer " + os.environ["DS_KEY"],
+                        "Content-Type": "application/json"}, method="POST", timeout=90)
+    msg = json.loads(raw)["choices"][0]["message"]["content"].strip()
+    msg = msg + f"\nhttps://www.bilibili.com/video/{it['bvid']}"
+    r = send_msg(cookie, csrf, me, msg)
+    print("share sent:", r.get("code"), it["bvid"], it["title"][:30])
+    sent.append(it["bvid"])
+    st["sent_bvids"] = sent[-80:]
+    st["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    write_state(st, sha)
+
+
 def main():
+    if os.environ.get("MODE") == "share":
+        share()
+        return
     cookie, ck = cookie_header()
     me = str(ck.get("DedeUserID"))
     csrf = ck.get("bili_jct", "")
