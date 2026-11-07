@@ -1,0 +1,23 @@
+name: bili share
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  share:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: run share
+        env:
+          MODE: share
+          BILI_COOKIE: ${{ secrets.BILI_COOKIE }}
+          DS_KEY: ${{ secrets.DS_KEY }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: python poll.py
